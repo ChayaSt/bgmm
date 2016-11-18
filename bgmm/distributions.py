@@ -7,10 +7,11 @@ This code is taken from Grosse and Duvenaud (Testing MCMC code)
 """
 
 import numpy as np
-from scipy.special import (psi, polygamma, gammaln)
-from scipy.stats import (dirichlet, invgamma, binom)
+from scipy.special import gammaln
+from scipy.stats import (dirichlet, invgamma)
 
-class GaussianDistribution:
+
+class Gaussian(object):
     def __init__(self, mu, sigma_sq):
         self.mu = mu
         self.sigma_sq = sigma_sq
@@ -21,7 +22,8 @@ class GaussianDistribution:
     def sample(self):
         return np.random.normal(self.mu, np.sqrt(self.sigma_sq))
 
-class DirichletDistribution:
+
+class Dirichlet(object):
     def __init__(self, alpha):
         self.alpha = alpha
 
@@ -32,7 +34,7 @@ class DirichletDistribution:
         return np.random.dirichlet(self.alpha)
 
 
-class InverseGamma:
+class InverseGamma(object):
     def __init__(self, a_mu, b_mu):
         self.a_mu = a_mu
         self.b_mu = b_mu
@@ -40,5 +42,45 @@ class InverseGamma:
     def log_p(self, x):
         return invgamma.logpdf(x=x, a=self.a_mu, scale=self.b_mu)
 
-    # def sample(self):
-    #     return np.random.g
+    def sample(self):
+        return self.b_mu*invgamma.rvs(self.a_mu)
+
+
+class Multinomial(object):
+    def __init__(self, pi, rso=np.random):
+        if not np.isclose(pi.sum(1), 1.0).all():
+            raise ValueError("event probability do not sum to 1")
+        self.pi = pi  # can be array of pi's
+        self.rso = rso
+
+        self.logp = np.log(self.pi)
+
+    def log_p(self, x):
+        """
+        ToDo: extend to array of pi's
+        :param x: numpy array of length len(pi)
+            The number of occurrences of each outcome
+        :return: log-PMF for draw 'x'
+
+        """
+        # total number of events
+        n = np.sum(x)
+
+        # equivalent to log(n!)
+        log_n_factorial = gammaln(n+1)
+        # equivalent to log(x1!*...*xk!)
+        sum_log_xi_factorial = np.sum(gammaln(x+1))
+
+        log_pi_xi = self.logp*x
+        log_pi_xi[ x==0 ] = 0
+        # equivalent to log(p1^x1*...*pk^k)
+        sum_log_pi_xi = np.sum(log_pi_xi)
+
+        return log_n_factorial - sum_log_xi_factorial + sum_log_pi_xi
+
+    def sample(self, n=1):
+        z = np.zeros(self.pi.shape())
+        for i, j in enumerate(self.pi):
+            z[i] = np.random.multinomial(n, pvals=j)
+        return np.where(z)[-1]
+
