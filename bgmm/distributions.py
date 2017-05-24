@@ -31,6 +31,10 @@ class Dirichlet(object):
         return dirichlet.logpdf(x=x, alpha=self.alpha)
 
     def sample(self):
+        # Use standard gamma to generate multidimensional dirichlet
+        # r = np.random.standard_gamma(self.alpha)
+        # r /= r.sum(-1).reshape(-1, 1)
+        # return r
         return np.random.dirichlet(self.alpha)
 
 
@@ -55,32 +59,37 @@ class Multinomial(object):
 
         self.logp = np.log(self.pi)
 
-    def log_p(self, x):
+    def log_p(self, counts):
         """
         ToDo: extend to array of pi's
-        :param x: numpy array of length len(pi)
+        :param counts: numpy array of length len(pi)
             The number of occurrences of each outcome
         :return: log-PMF for draw 'x'
 
         """
         # total number of events
-        n = np.sum(x)
+        n = np.sum(counts)
 
         # equivalent to log(n!)
         log_n_factorial = gammaln(n+1)
         # equivalent to log(x1!*...*xk!)
-        sum_log_xi_factorial = np.sum(gammaln(x+1))
+        sum_log_xi_factorial = np.sum(gammaln(counts+1))
 
-        log_pi_xi = self.logp*x
-        log_pi_xi[ x==0 ] = 0
+        log_pi_xi = self.logp*counts
+        log_pi_xi[ counts==0 ] = 0
         # equivalent to log(p1^x1*...*pk^k)
         sum_log_pi_xi = np.sum(log_pi_xi)
 
         return log_n_factorial - sum_log_xi_factorial + sum_log_pi_xi
 
+    # def sample_counts(self, samples):
+    #     # Returns counts
+    #     return np.random.multinomial(n=self.evidence.shape[1], pvals=self.pi)
+
     def sample(self, n=1):
-        z = np.zeros(self.pi.shape())
+        # Returns component assignments using evidence
+        z = np.zeros(self.pi.shape[0])
         for i, j in enumerate(self.pi):
-            z[i] = np.random.multinomial(n, pvals=j)
-        return np.where(z)[-1]
+            z[i] = np.where(np.random.multinomial(n=n, pvals=j))[0][0]
+        return z
 
