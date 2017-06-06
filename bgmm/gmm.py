@@ -34,9 +34,13 @@ class Model:
         self.dim = dim               # dimension (default is 1)
 
     def cond_pi(self, state):
-        state.counts = np.bincount(state.z)
-        if state.counts.shape < self.alpha.shape:
-           state.counts = np.append(state.counts, np.ones(1))
+        counts = np.zeros(self.K)
+        for i in range(self.K):
+            counts[i] = len(np.where(state.z == i)[0])
+        #state.counts = np.bincount(state.z)
+        #if state.counts.shape < self.alpha.shape:
+           #state.counts = np.append(state.counts, np.ones(1))
+        state.counts = counts
         return Dirichlet(self.alpha + state.counts)
 
     def cond_z(self, state, X):
@@ -90,24 +94,52 @@ class Model:
                 0.5 * np.sum((X[idx] - state.mu[k]) ** 2)
         return InverseGamma(a, b)
 
-    def cond_mu_sigma(self, state, X):
+    def cond_mu_jeff(self, state, X):
+        mu = np.zeros((self.K, self.dim))
+        sigma = state.sigma_sq_n.reshape(self.K, self.dim)
         for k in range(self.K):
             idx = np.where(state.z == k)[0]
-            mu = np.zeros(self.K)
-            sigma = state.sigma_sq_n
+            if len(idx) ==0:
+                mu[k] = 0
+                sigma[k] = 100
+                print('Warning: No samples in component')
+            if len(idx) > 0:
+                mu[k] = np.mean(X[idx])
+                sigma[k] /= len(idx)
+        return Gaussian(mu, sigma)
+
+    def cond_sigma_jeff(self, state, X):
+        # scaled inverse chisquared with a_mu = -1/2, b_mu = 0
+        idx = np.zeros(self.K)
+        sigmahat2 = np.zeros(self.K)
+        for k in range(self.K):
+            id = np.where(state.z == k)[0]
+            idx[k] = len(id)
+            if idx[k] <= 1:
+                idx[k] = 0.001
+                sigmahat2[k] = 0.001
+            else:
+                idx[k] -= 1
+                sigmahat2[k] = np.mean((X[id] - state.mu[k])**2)
+        return InverseGamma(idx/2, (sigmahat2*idx)/2)
+
+    def cond_mu_sigma(self, state, X):
+        mu = np.zeros(self.K)
+        sigma = state.sigma_sq_n
+        for k in range(self.K):
+            idx = np.where(state.z == k)[0]
             if len(idx) == 0:
                 mu[k] = 0
                 print('Warning, no samples in component')
             if len(idx) > 0:
-                mu[k] = Gaussian(np.mean(X[idx]), state.sigma_sq_n[k]).sample()
-                #mu[k] = np.random.randn()*state.sigma_sq_n[k] + np.mean(X[idx])
+                #mu[k] = Gaussian(np.mean(X[idx]), state.sigma_sq_n[k]/len(idx)).sample()
+                mu[k] = np.random.randn()*state.sigma_sq_n[k] + np.mean(X[idx])
             if len(idx) > 1:
-                #chaisquared = np.random.chisquare(df=len(idx)-1)
+                chaisquared = np.random.chisquare(df=len(idx)-1)
                 sigmahat2 = np.mean((X[idx] - mu[k])**2)
-                #sigma[k] = sigmahat2*len(idx)/chaisquared
-                sigma[k] = InverseGamma(a_mu=(len(idx)*sigmahat2)/2, b_mu=(1/2)).sample()
+                sigma[k] = sigmahat2*len(idx)/chaisquared
+                #sigma[k] = InverseGamma(a_mu=(len(idx)-1)/2, b_mu=(len(idx)-1*sigmahat2/2)).sample()
         return mu.reshape(self.K, self.dim), sigma
-
 
 
     def joint_log_p(self, state, X):
@@ -137,6 +169,8 @@ class Sampler(object):
         self.state.z = self.model.cond_z(self.state, self.X).sample()
         if self.prior == 'Jeff':
             self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
+            #self.state.mu = self.model.cond_mu_jeff(self.state, self.X).sample()
+            #self.state.sigma_sq_n = self.model.cond_sigma_jeff(self.state, self.X).sample()
         else:
             self.state.mu = self.model.cond_mu(self.state, self.X).sample()
             self.state.sigma_sq_mu = self.model.cond_sigma_sq_mu(self.state).sample()
