@@ -89,7 +89,10 @@ class Multinomial(object):
     def sample(self, n=1):
         # Returns component assignments using evidence
         z = np.zeros(self.pi.shape[0], dtype='int64')
+        components = list(range(self.pi.shape[1]))
+        #print(components)
         for i, j in enumerate(self.pi):
             z[i] = np.where(np.random.multinomial(n=n, pvals=j))[0][0]
+            #z[i] = np.random.choice(components, 1, p=j)
         return z
 

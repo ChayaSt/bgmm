@@ -35,6 +35,8 @@ class Model:
 
     def cond_pi(self, state):
         state.counts = np.bincount(state.z)
+        if state.counts.shape < self.alpha.shape:
+           state.counts = np.append(state.counts, np.ones(1))
         return Dirichlet(self.alpha + state.counts)
 
     def cond_z(self, state, X):
@@ -46,6 +48,11 @@ class Model:
 
         # normalize
         pvals = np.exp(post - logsumexp(post, axis=1)[:, nax])
+        # C = 1.0/(np.sqrt(2*np.pi) * state.sigma_sq_n)
+        # p_z_k = state.pi.reshape(3,) * (C * np.exp(-0.5*((X - state.mu.reshape(3,))/state.sigma_sq_n.reshape(3,))**2))
+        # print(p_z_k)
+        # #normalize
+        # p_z_k /= p_z_k.sum(1)[:, np.newaxis]
         return Multinomial(pvals)
 
     def cond_mu(self, state, X):
@@ -83,6 +90,26 @@ class Model:
                 0.5 * np.sum((X[idx] - state.mu[k]) ** 2)
         return InverseGamma(a, b)
 
+    def cond_mu_sigma(self, state, X):
+        for k in range(self.K):
+            idx = np.where(state.z == k)[0]
+            mu = np.zeros(self.K)
+            sigma = state.sigma_sq_n
+            if len(idx) == 0:
+                mu[k] = 0
+                print('Warning, no samples in component')
+            if len(idx) > 0:
+                mu[k] = Gaussian(np.mean(X[idx]), state.sigma_sq_n[k]).sample()
+                #mu[k] = np.random.randn()*state.sigma_sq_n[k] + np.mean(X[idx])
+            if len(idx) > 1:
+                #chaisquared = np.random.chisquare(df=len(idx)-1)
+                sigmahat2 = np.mean((X[idx] - mu[k])**2)
+                #sigma[k] = sigmahat2*len(idx)/chaisquared
+                sigma[k] = InverseGamma(a_mu=(len(idx)*sigmahat2)/2, b_mu=(1/2)).sample()
+        return mu.reshape(self.K, self.dim), sigma
+
+
+
     def joint_log_p(self, state, X):
         return (Dirichlet(self.alpha*np.ones(self.K)).log_p(state.pi) +
                 Multinomial(self.state.pi).log_p(state.z).sum() +
@@ -94,7 +121,7 @@ class Model:
 
 class Sampler(object):
 
-    def __init__(self, niter, model, state, X):
+    def __init__(self, niter, model, state, X, prior='Jeff'):
         self.logger = {'pi': np.zeros((niter, model.K)),
                        'mean': np.zeros((niter, model.K, model.dim)),
                        'sigma_sq_mu': np.zeros((niter, 1)),
@@ -103,13 +130,17 @@ class Sampler(object):
         self.state = copy.deepcopy(state)
         self.model = model
         self.X = X
+        self.prior = prior
 
     def gibbs_step(self):
         self.state.pi = self.model.cond_pi(self.state).sample()
         self.state.z = self.model.cond_z(self.state, self.X).sample()
-        self.state.mu = self.model.cond_mu(self.state, self.X).sample()
-        self.state.sigma_sq_mu = self.model.cond_sigma_sq_mu(self.state).sample()
-        self.state.sigma_sq_n = self.model.cond_sigma_sq_n(self.state, self.X).sample()
+        if self.prior == 'Jeff':
+            self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
+        else:
+            self.state.mu = self.model.cond_mu(self.state, self.X).sample()
+            self.state.sigma_sq_mu = self.model.cond_sigma_sq_mu(self.state).sample()
+            self.state.sigma_sq_n = self.model.cond_sigma_sq_n(self.state, self.X).sample()
 
     def sample(self):
         for i in tqdm(range(self.niter)):
