@@ -52,14 +52,18 @@ class InverseGamma(object):
 
 class Multinomial(object):
     def __init__(self, pi, rso=np.random):
-        if not np.isclose(pi.sum(1), 1.0).all():
-            raise ValueError("event probability do not sum to 1")
+        if len(pi.shape) > 1:
+            if not np.isclose(pi.sum(1), 1.0).all():
+                raise ValueError("event probability do not sum to 1")
+        else:
+            if not np.isclose(pi.sum(), 1.0):
+                raise ValueError("event probability do not sum to 1")
         self.pi = pi  # can be array of pi's
         self.rso = rso
 
         self.logp = np.log(self.pi)
 
-    def log_p(self, counts):
+    def log_p(self, z):
         """
         ToDo: extend to array of pi's
         :param counts: numpy array of length len(pi)
@@ -68,6 +72,9 @@ class Multinomial(object):
 
         """
         # total number of events
+        counts = np.zeros(self.pi.shape[-1])
+        for i in range(self.pi.shape[-1]):
+            counts[i] = len(np.where(z == i)[0])
         n = np.sum(counts)
 
         # equivalent to log(n!)
@@ -76,7 +83,7 @@ class Multinomial(object):
         sum_log_xi_factorial = np.sum(gammaln(counts+1))
 
         log_pi_xi = self.logp*counts
-        log_pi_xi[ counts==0 ] = 0
+        log_pi_xi[np.where(counts == 0)[0]] = 0
         # equivalent to log(p1^x1*...*pk^k)
         sum_log_pi_xi = np.sum(log_pi_xi)
 

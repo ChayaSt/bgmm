@@ -16,12 +16,12 @@ from tqdm import tqdm
 
 
 class State:
-    def __init__(self, z, mu, sigma_aq_mu, sigma_sq_n, pi):
+    def __init__(self, z, mu, sigma_sq_mu, sigma_sq_n, pi):
         self.z = z                     # Assignments (represented as an array with K assignment given as integer) (N)
         self.counts = np.zeros(pi.shape)               #
         self.pi = pi                   # Mixture probabilities (K)
         self.mu = mu                   # cluster means (Dim x K)
-        self.sigma_sq_mu = sigma_aq_mu # Between cluster variance (hyperparameter on Gaussian prior for mu)
+        self.sigma_sq_mu = sigma_sq_mu # Between cluster variance (hyperparameter on Gaussian prior for mu)
         self.sigma_sq_n = sigma_sq_n   # Within cluster variance
 
 
@@ -136,7 +136,7 @@ class Model:
                 print('Warning, no samples in component')
             if len(idx) > 0:
                 #mu[k] = Gaussian(np.mean(X[idx]), state.sigma_sq_n[k]/len(idx)).sample()
-                mu[k] = np.random.randn()*state.sigma_sq_n[k] + np.mean(X[idx])
+                mu[k] = np.random.randn()*state.sigma_sq_n[k]/len(idx) + np.mean(X[idx])
             if len(idx) > 1:
                 chaisquared = np.random.chisquare(df=len(idx)-1)
                 sigmahat2 = np.mean((X[idx] - mu[k])**2)
@@ -144,14 +144,43 @@ class Model:
                 #sigma[k] = InverseGamma(a_mu=(len(idx)-1)/2, b_mu=(len(idx)-1*sigmahat2/2)).sample()
         return mu.reshape(self.K, self.dim), sigma
 
-
     def joint_log_p(self, state, X):
         return (Dirichlet(self.alpha*np.ones(self.K)).log_p(state.pi) +
-                Multinomial(self.state.pi).log_p(state.z).sum() +
+                Multinomial(state.pi).log_p(state.z).sum() +
                 self.sigma_sq_mu_prior.log_p(state.sigma_sq_mu) +
-                self.sigma_sq_n_prior.log_p(state.sigma_sq_n) +
+                self.sigma_sq_n_prior.log_p(state.sigma_sq_n).sum() +
                 Gaussian(0., state.sigma_sq_mu).log_p(state.mu).sum() +
-                Gaussian(state.mu[state.z, :], state.sigma_sq_n).log_p(X).sum())
+                Gaussian(state.mu[state.z, :].reshape(X.shape[0]),
+                         state.sigma_sq_n.reshape(self.K, 1)[state.z, :].reshape(X.shape[0])).log_p(X.reshape(X.shape[0])).sum())
+
+    def forward_sample(self, N, state=None):
+        STATE=True
+        if not state:
+            STATE=False
+            # Generate random state
+            pi = Dirichlet(self.alpha).sample()
+            mu = np.random.uniform(low=0, high=6, size=self.K).reshape(self.K, self.dim)
+            sigma_sq_n = np.random.uniform(low=0, high=0.3, size=self.K)
+            sigma_sq_mu = np.random.uniform(low=0, high=5)
+            z = np.zeros(N)
+            state = State(pi=pi, z=z, mu=mu, sigma_sq_n=sigma_sq_n, sigma_sq_mu=sigma_sq_mu)
+
+        cdf = np.cumsum(state.pi)
+        samples = np.zeros([N])
+        z = np.zeros(N, dtype='int64')
+        for i in range(N):
+            rand = np.random.random()
+            m = cdf.searchsorted(rand)
+            z[i] = m
+            samples[i] = Gaussian(state.mu[m], state.sigma_sq_n[m]).sample()
+
+        if not STATE:
+            # update state
+            state.z = z
+            state.counts = np.bincount(z)
+            return state, samples
+        else:
+            return samples
 
 
 class Sampler(object):
@@ -171,9 +200,9 @@ class Sampler(object):
         self.state.pi = self.model.cond_pi(self.state).sample()
         self.state.z = self.model.cond_z(self.state, self.X).sample()
         if self.prior == 'Jeff':
-            #self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
-            self.state.mu = self.model.cond_mu_jeff(self.state, self.X).sample()
-            self.state.sigma_sq_n = self.model.cond_sigma_jeff(self.state, self.X).sample()
+            self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
+            #self.state.mu = self.model.cond_mu_jeff(self.state, self.X).sample()
+            #self.state.sigma_sq_n = self.model.cond_sigma_jeff(self.state, self.X).sample()
         else:
             self.state.mu = self.model.cond_mu(self.state, self.X).sample()
             self.state.sigma_sq_mu = self.model.cond_sigma_sq_mu(self.state).sample()
@@ -187,3 +216,16 @@ class Sampler(object):
             self.logger['mean'][i] = self.state.mu
             self.logger['sigma_sq_mu'][i] = self.state.sigma_sq_mu
             self.logger['sigma_sq_n'][i] = self.state.sigma_sq_n
+
+
+# def random_model():
+#     # Generate random model of default dim 1
+#
+#     K = np.random.randint(low=2, high=5)
+#     alpha = np.random.uniform(low=-1, high=5, size=K)
+#
+#     sigma_sq_mu_prior = InverseGamma(a_mu=0.1, b_mu=0.1)
+#     sigma_sq_n_prior = InverseGamma(a_mu=0.1, b_mu=0.1)
+#
+#     model = Model(alpha=alpha, K=K, sigma_sq_mu_prior=sigma_sq_mu_prior, sigma_sq_n_prior=sigma_sq_n_prior)
+#     return model
