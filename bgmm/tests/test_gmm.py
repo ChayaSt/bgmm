@@ -4,47 +4,48 @@ import unittest
 from bgmm import gmm
 from bgmm.distributions import (Gaussian, InverseGamma, Dirichlet, Multinomial)
 import numpy as np
+import copy
 
 def random_model():
-    dim = np.random.randint(low=1, high=3)
+    # Default dimension of 1
     K = np.random.randint(low=2, high=5)
 
     alpha = np.random.uniform(low=-1, high=5, size=K)
-    pi = np.random.dirichlet(alpha)
 
+    sigma_sq_mu_prior = InverseGamma(a_mu=0.1, b_mu=0.1)
+    sigma_sq_n_prior = InverseGamma(a_mu=0.1, b_mu=0.1)
 
-    sigma_sq_mu_prior = InverseGamma(a_mu=, b_mu=)
-    sigma_sq_n_prior = InverseGamma(a_mu=, b_mu=)
-
-    model = gmm.Model(alpha=alpha, K=K, sigma_sq_mu_prior, sigma_sq_n_prior)
+    model = gmm.Model(alpha=alpha, K=K, sigma_sq_mu_prior=sigma_sq_mu_prior, sigma_sq_n_prior=sigma_sq_n_prior)
     return model
 
-def initialize_state(model):
-    #ToDo extend to higher dimensions
-    mu = np.zeros((model.K, model.dim))
-    for i in range(model.K):
-        mu[i] = np.random.uniform(low=-2, high=2, size=model.dim)
-    sigma_sq_mu = InverseGamma(a_mu=, b_mu=).sample()
-    sigma_sq_n = InverseGamma(a_mu=, b_mu=).sample()
-    pi = np.random.dirichlet(model.alpha)
+model = random_model()
+state, X = model.forward_sample(N=100)
+X = X.reshape(len(X), model.dim)
 
-    # generate Z from pi
-    cdf = np.cumsum(pi)
-    z = np.zeros(100)
-    for i in range(100):
-        rand = np.random.random()
-        z[i] = cdf.searchsorted(rand)
 
-    state = gmm.State(z=z, pi=pi, mu=mu, sigma_sq_mu=sigma_sq_mu, sigma_sq_n=sigma_sq_n)
-    return state
+def test_cond_mu():
+    """test conditiona mu"""
+    new_state = copy.deepcopy(state)
+    new_state.mu = np.random.normal(size=model.K).reshape(model.K, model.dim)
+    cond = model.cond_mu(state, X)
+    assert np.allclose(cond.log_p(new_state.mu).sum() - cond.log_p(state.mu).sum(),
+                       model.joint_log_p(new_state, X) - model.joint_log_p(state, X))
 
-def generate_samples(state, dim):
-    samples = np.zeros((100, dim))
-    cdf = np.cumsum(state.pi)
-    for i in range(samples.shape[0]):
-        rand = np.random.random()
-        m = cdf.searchsorted(rand)
-        #ToDo generate greater than 1D samples
-        samples[i] = state.sigma_sq_n*np.random.randn() + state.mu[m]
 
-    return samples
+def test_cond_pi():
+    """ Test conditional pi """
+    new_state = copy.deepcopy(state)
+    new_state.pi = np.random.dirichlet(model.alpha)
+    cond = model.cond_pi(state)
+    assert np.allclose(cond.log_p(new_state.pi) - cond.log_p(state.pi),
+                       model.joint_log_p(new_state, X) - model.joint_log_p(state, X))
+
+
+def test_cond_z():
+    """ Test conditional z """
+    new_state = copy.deepcopy(state)
+    pvals = np.random.dirichlet(model.alpha, size=len(X))
+    new_state.z = Multinomial(pvals).sample()
+    cond = model.cond_z(state, X)
+    assert np.allclose(cond.log_p(new_state.z) - cond.log_p(state.z),
+                       model.joint_log_p(new_state, X) - model.joint_log_p(state, X))
