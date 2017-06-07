@@ -47,7 +47,9 @@ class Model:
         # ToDo make sure the evidence is for all dimensions (that it works for multidimensional Gaussian)
         nax = np.newaxis
         prior = np.log(state.pi)
-        evidence = Gaussian(state.mu[nax, :, :], state.sigma_sq_n).log_p(X[:, nax, :]).sum(2)
+        #evidence = Gaussian(state.mu[nax, :, :], state.sigma_sq_n).log_p(X[:, nax, :]).sum(2)
+        evidence = Gaussian(state.mu.reshape(self.K), state.sigma_sq_n).log_p(X)
+
         post = prior + evidence
 
         # normalize
@@ -57,6 +59,7 @@ class Model:
         # print(p_z_k)
         # #normalize
         # p_z_k /= p_z_k.sum(1)[:, np.newaxis]
+        #print(pvals)
         return Multinomial(pvals)
 
     def cond_mu(self, state, X):
@@ -168,9 +171,9 @@ class Sampler(object):
         self.state.pi = self.model.cond_pi(self.state).sample()
         self.state.z = self.model.cond_z(self.state, self.X).sample()
         if self.prior == 'Jeff':
-            self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
-            #self.state.mu = self.model.cond_mu_jeff(self.state, self.X).sample()
-            #self.state.sigma_sq_n = self.model.cond_sigma_jeff(self.state, self.X).sample()
+            #self.state.mu, self.state.sigma_sq_n = self.model.cond_mu_sigma(self.state, self.X)
+            self.state.mu = self.model.cond_mu_jeff(self.state, self.X).sample()
+            self.state.sigma_sq_n = self.model.cond_sigma_jeff(self.state, self.X).sample()
         else:
             self.state.mu = self.model.cond_mu(self.state, self.X).sample()
             self.state.sigma_sq_mu = self.model.cond_sigma_sq_mu(self.state).sample()
