@@ -95,8 +95,7 @@ class Multinomial(object):
 
         log_p = np.zeros(len(z))
         for i, j in enumerate(z):
-            log_p[i] = np.log(self.pi[i][j])
-
+            log_p[i] = self.logp[i][j]
         return log_p
 
     # def sample_counts(self, samples):
