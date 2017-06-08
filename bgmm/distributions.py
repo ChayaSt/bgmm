@@ -51,6 +51,7 @@ class InverseGamma(object):
 
 
 class Multinomial(object):
+    """This is really the catagorical"""
     def __init__(self, pi, rso=np.random):
         if len(pi.shape) > 1:
             if not np.isclose(pi.sum(1), 1.0).all():
@@ -63,9 +64,9 @@ class Multinomial(object):
 
         self.logp = np.log(self.pi)
 
-    def log_p(self, z):
+    def log_p_mult(self, z):
         """
-        ToDo: extend to array of pi's
+        ToDo:
         :param counts: numpy array of length len(pi)
             The number of occurrences of each outcome
         :return: log-PMF for draw 'x'
@@ -89,11 +90,21 @@ class Multinomial(object):
 
         return log_n_factorial - sum_log_xi_factorial + sum_log_pi_xi
 
+    def log_p(self, z):
+        """This calculated logP of catagorical"""
+
+        log_p = np.zeros(len(z))
+        for i, j in enumerate(z):
+            log_p[i] = np.log(self.pi[i][j])
+
+        return log_p
+
     # def sample_counts(self, samples):
     #     # Returns counts
     #     return np.random.multinomial(n=self.evidence.shape[1], pvals=self.pi)
 
     def sample(self, n=1):
+        """For n=1, this is a catagorical"""
         # Returns component assignments using evidence
         z = np.zeros(self.pi.shape[0], dtype='int64')
         components = list(range(self.pi.shape[1]))

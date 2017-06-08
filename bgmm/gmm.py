@@ -146,7 +146,7 @@ class Model:
 
     def joint_log_p(self, state, X):
         return (Dirichlet(self.alpha*np.ones(self.K)).log_p(state.pi) +
-                Multinomial(state.pi).log_p(state.z).sum() +
+                Multinomial(state.pi).log_p_mult(state.z).sum() +
                 self.sigma_sq_mu_prior.log_p(state.sigma_sq_mu) +
                 self.sigma_sq_n_prior.log_p(state.sigma_sq_n).sum() +
                 Gaussian(0., state.sigma_sq_mu).log_p(state.mu).sum() +
